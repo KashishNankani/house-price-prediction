@@ -13,4 +13,8 @@ In this notebook I explored:
 
 I also experimented with combining porch-related features into a new feature called `TotalPorchSF`.
 
+<<<<<<< HEAD
 The goal of this project is not just model accuracy, but understanding how real-world ML preprocessing and feature selection works.
+=======
+The goal of this project is not just model accuracy, but understanding how real-world ML preprocessing and feature selection works.
+>>>>>>> 95ee673 (minor notebook updates)
