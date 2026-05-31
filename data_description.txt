@@ -1,4 +1,4 @@
-MSSubClass: Identifies the type of dwelling involved in the sale.	
+MSSubClass: Identifies the type of dwelling involved in the sale.--> IMPORTANT	
 
         20	1-STORY 1946 & NEWER ALL STYLES
         30	1-STORY 1945 & OLDER
@@ -17,7 +17,7 @@ MSSubClass: Identifies the type of dwelling involved in the sale.
        180	PUD - MULTILEVEL - INCL SPLIT LEV/FOYER
        190	2 FAMILY CONVERSION - ALL STYLES AND AGES
 
-MSZoning: Identifies the general zoning classification of the sale.
+MSZoning: Identifies the general zoning classification of the sale.--> IMPORTANT
 		
        A	Agriculture
        C	Commercial
@@ -28,11 +28,11 @@ MSZoning: Identifies the general zoning classification of the sale.
        RP	Residential Low Density Park 
        RM	Residential Medium Density
 	
-LotFrontage: Linear feet of street connected to property
+LotFrontage: Linear feet of street connected to property --> IMPORTANT
 
-LotArea: Lot size in square feet
+LotArea: Lot size in square feet--> IMPORTANT
 
-Street: Type of road access to property
+Street: Type of road access to property--> IMPORTANT
 
        Grvl	Gravel	
        Pave	Paved
@@ -188,7 +188,7 @@ RoofStyle: Type of roof
        Mansard	Mansard
        Shed	Shed
 		
-RoofMatl: Roof material
+base
 
        ClyTile	Clay or Tile
        CompShg	Standard (Composite) Shingle
@@ -376,7 +376,7 @@ HalfBath: Half baths above grade
 
 Bedroom: Bedrooms above grade (does NOT include basement bedrooms)
 
-Kitchen: Kitchens above grade
+KitchenAbvGr: Kitchens above grade
 
 KitchenQual: Kitchen quality
 
