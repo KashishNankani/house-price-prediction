@@ -25,7 +25,7 @@ Examples:
 
 * Garage-related features → filled with **"No Garage"** when the property had no garage
 * Basement-related features → filled with **"No Basement"** when the property had no basement
-* LotFrontage → filled using neighborhood-wise median values
+* LotFrontage → filled using **neighborhood-wise median values** instead of global median, because LotFrontage follows a conditional distribution — P(LotFrontage | Neighborhood) — meaning houses in the same neighborhood tend to have similar lot sizes. Using a global median would ignore this subgroup structure and introduce bias. This is a case of Missing At Random (MAR), where missingness is related to another observed variable (Neighborhood), making conditional imputation the statistically correct approach.
 * Electrical → filled using mode (only one missing value)
 * Masonry veneer features were handled using both `MasVnrType` and `MasVnrArea` together
 
@@ -51,11 +51,17 @@ Removed features with little predictive value:
 
 ---
 
-### 4. Outlier Treatment
+### 4. Outlier Treatment — Intentionally Preserved
 
-Outliers were identified using distribution analysis and boxplots.
+Outliers in SalePrice were **deliberately kept in the training data.**
 
-Approximately 3.6% of observations were removed to reduce the influence of extreme values and improve model stability.
+While removing outliers improved evaluation metrics on paper, it created a more serious problem: a truncated training distribution. A model trained without expensive houses has never learned patterns for that price range. In production, when a high-value property is submitted for prediction, the model would silently underpredict — returning a plausible-looking but completely wrong number with no error thrown.
+
+This is called **silent failure** and is one of the most dangerous issues in deployed ML systems.
+
+By keeping outliers and instead applying log transformation to SalePrice, the model compresses extreme values without discarding them. The model learns from the full price spectrum and generalizes correctly to luxury properties — which is what a real estate company would require.
+
+**Lesson: A model that looks slightly worse on metrics but handles real-world edge cases correctly is more valuable than one optimized purely for benchmark numbers.**
 
 ---
 
@@ -69,7 +75,7 @@ Examples:
 * MasVnrArea
 * Other positively skewed numerical variables
 
-The target variable (`SalePrice`) was also log-transformed before training.
+The target variable (`SalePrice`) was also log-transformed before training. This compressed the right-skewed tail of house prices, brought residuals closer to a normal distribution (which Linear Regression assumes), and reduced the disproportionate influence of extreme values on model weights.
 
 ---
 
@@ -85,7 +91,7 @@ The target variable (`SalePrice`) was also log-transformed before training.
 
 | Model             | RMSE       | MAE        | MAPE      | R²        |
 | ----------------- | ---------- | ---------- | --------- | --------- |
-| Linear Regression | **17,871** | **13,485** | **8.73%** | **0.904** |
+| Linear Regression | **27,192** | **16,616** | **9.59%** | **0.894** |
 | Decision Tree     | 29,745     | 22,892     | 15.2%     | 0.73      |
 | Random Forest     | 21,153     | 15,393     | 10.2%     | 0.87      |
 | XGBoost           | 19,677     | 14,181     | 9.4%      | 0.88      |
@@ -98,7 +104,9 @@ The target variable (`SalePrice`) was also log-transformed before training.
 
 Performed best after preprocessing and target transformation.
 
-The combination of feature engineering, skewness reduction, encoding, and log-transforming `SalePrice` helped linear relationships become more apparent, allowing Linear Regression to achieve the best overall performance.
+The combination of feature engineering, skewness reduction, encoding, and log-transforming `SalePrice` helped linear relationships become more apparent. Importantly, StandardScaler significantly improved Linear Regression performance because the model relies on weight multiplication — scale directly affects predictions. Tree-based models like XGBoost are scale invariant (they split on thresholds, not magnitudes), so the same standardization had no effect on them.
+
+This is why a heavily preprocessed dataset favored a linear model over more complex ensemble methods.
 
 ### Decision Tree
 
@@ -110,20 +118,20 @@ Reduced overfitting compared to a single decision tree but could not outperform 
 
 ### XGBoost
 
-Captured additional nonlinear relationships and improved upon Random Forest, but the improvement over Linear Regression was relatively small.
+Captured additional nonlinear relationships and improved upon Random Forest, but could not overcome the advantage Linear Regression gained from data that was engineered toward linearity.
 
 ---
 
 ## Final Result
 
-### Linear Regression
+### Linear Regression (trained on full price range including outliers)
 
-* RMSE: **17,871**
-* MAE: **13,485**
-* MAPE: **8.73%**
-* R²: **0.904**
+* RMSE: **27,192**
+* MAE: **16,616**
+* MAPE: **9.59%**
+* R²: **0.894**
 
-On average, predictions are within approximately **8.7%** of the actual house price.
+On average, predictions are within approximately **9.6%** of the actual house price — across the full price spectrum including luxury properties.
 
 ---
 
@@ -133,32 +141,32 @@ On average, predictions are within approximately **8.7%** of the actual house pr
 | -------------------------------------- | ---------- | --------- |
 | Initial Baseline                       | 31,237     | 0.86      |
 | After Cleaning & Feature Engineering   | ~20,500    | ~0.87     |
-| After Skewness Reduction & Log(Target) | **17,871** | **0.904** |
+| After Skewness Reduction & Log(Target) | **27,192** | **0.894** |
 
 ---
 
-## Key Learning
+## Key Learnings
 
 The biggest improvement came from understanding and preparing the data rather than simply switching to more complex models.
 
-RMSE improved from:
+A critical production insight emerged during this project: **optimizing for metrics is not the same as optimizing for real-world reliability.**
 
-**31,237 → 17,871**
+Removing outliers reduced RMSE from ~27k to ~17k — but created a model that would fail silently on luxury properties in production. Keeping the full training distribution and relying on log transformation instead is the correct production-grade decision, even at the cost of slightly worse benchmark numbers.
 
-while R² improved from:
-
-**0.86 → 0.904**
-
-This project reinforced an important machine learning lesson:
+This project reinforced two important machine learning lessons:
 
 > Better data preparation often contributes more to model performance than choosing a more complex algorithm.
+
+> A model that generalizes correctly to the real world is more valuable than one that scores well on a filtered dataset.
 
 ---
 
 ## Future Improvements
 
-* Perform cross-validation for more robust evaluation
-* Experiment with advanced feature interactions
-* Tune XGBoost and Random Forest using systematic hyperparameter search
-* Analyze residuals to understand where prediction errors are still occurring
-* Build an end-to-end prediction pipeline for deployment
+* Build an end-to-end Sklearn Pipeline to chain preprocessing and prediction into a single deployable object
+* Add input validation layer — check for missing fields, unseen categories, and out-of-range values before prediction reaches the model
+* Deploy as a FastAPI endpoint so frontend applications can submit house features and receive price estimates
+* Implement cross-validation for more robust evaluation across data splits
+* Monitor for data drift over time and schedule periodic retraining
+* Analyze residuals to identify remaining systematic prediction errors
+* Experiment with advanced feature interactions and hyperparameter tuning for XGBoost and Random Forest
