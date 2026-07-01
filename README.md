@@ -45,9 +45,24 @@ Created new features that better represent how buyers perceive houses:
 
 Removed features with little predictive value:
 
-* Low-variance columns
+* Low-variance columns (e.g. `Id` — row number with no predictive meaning)
 * Redundant features identified during EDA
 * Features with excessive missingness and limited usefulness
+
+#### Multicollinearity Check
+
+Beyond removing irrelevant features, a correlation analysis was performed between all feature pairs to detect multicollinearity — where two input features are highly correlated with each other, causing model coefficients to become unstable and unreliable.
+
+Two problematic pairs were identified:
+
+| Feature Pair | Correlation | Decision |
+|---|---|---|
+| GarageCars vs GarageArea | 0.88 | Dropped GarageArea (lower correlation with SalePrice: 0.62 vs 0.64) |
+| GrLivArea vs TotRmsAbvGrd | 0.83 | Dropped TotRmsAbvGrd (lower correlation with SalePrice: 0.53 vs 0.69) |
+
+**Decision rule:** When two features are highly correlated with each other, keep the one with higher correlation to SalePrice. Let data decide, not intuition.
+
+Dropping these features did not dramatically change metrics but made coefficients significantly more stable and trustworthy — which matters more for a production model than a small metric gain.
 
 ---
 
@@ -65,7 +80,7 @@ By keeping outliers and instead applying log transformation to SalePrice, the mo
 
 ---
 
-### 5. Skewness Reduction
+### 5. Skewness Reduction & Log Transformation
 
 Several highly skewed numerical features were transformed using logarithms.
 
@@ -75,7 +90,13 @@ Examples:
 * MasVnrArea
 * Other positively skewed numerical variables
 
-The target variable (`SalePrice`) was also log-transformed before training. This compressed the right-skewed tail of house prices, brought residuals closer to a normal distribution (which Linear Regression assumes), and reduced the disproportionate influence of extreme values on model weights.
+The target variable (`SalePrice`) was also log-transformed before training for two reasons:
+
+**Reason 1 — Exponential relationships become linear**
+House prices follow exponential growth patterns. The jump from Overall Quality 9 to 10 is worth far more than the jump from 1 to 2. This is a non-linear relationship that Linear Regression cannot fit directly. Log transformation converts the exponential relationship to linear — P(log(SalePrice) | features) — which the model can learn effectively.
+
+**Reason 2 — Normality of residuals**
+Raw SalePrice is right-skewed, which violates the normality of residuals assumption in Linear Regression. Log transformation compresses the tail and brings residuals closer to a normal distribution, making coefficients more reliable.
 
 ---
 
@@ -85,16 +106,20 @@ The target variable (`SalePrice`) was also log-transformed before training. This
 * Ordinal Encoding for ordered categorical features
 * StandardScaler applied before Linear Regression
 
+StandardScaler significantly improved Linear Regression performance because the model relies on weight multiplication — scale directly affects predictions and coefficient comparability. Tree-based models like XGBoost are scale invariant (they split on thresholds, not magnitudes), so standardization had no effect on them.
+
 ---
 
 ## Models Evaluated
 
 | Model             | RMSE       | MAE        | MAPE      | R²        |
 | ----------------- | ---------- | ---------- | --------- | --------- |
-| Linear Regression | **27,192** | **16,616** | **9.59%** | **0.894** |
+| Linear Regression | **27,040** | **16,626** | **9.56%** | **0.896** |
 | Decision Tree     | 29,745     | 22,892     | 15.2%     | 0.73      |
 | Random Forest     | 21,153     | 15,393     | 10.2%     | 0.87      |
 | XGBoost           | 19,677     | 14,181     | 9.4%      | 0.88      |
+
+**Note on metrics:** MAPE (Mean Absolute Percentage Error) was used as the primary evaluation metric rather than RMSE, because house prices span a wide range. A 20k error on a 50k house is catastrophic; the same error on a 500k house is acceptable. MAPE captures this proportional difference — RMSE treats both identically.
 
 ---
 
@@ -104,69 +129,80 @@ The target variable (`SalePrice`) was also log-transformed before training. This
 
 Performed best after preprocessing and target transformation.
 
-The combination of feature engineering, skewness reduction, encoding, and log-transforming `SalePrice` helped linear relationships become more apparent. Importantly, StandardScaler significantly improved Linear Regression performance because the model relies on weight multiplication — scale directly affects predictions. Tree-based models like XGBoost are scale invariant (they split on thresholds, not magnitudes), so the same standardization had no effect on them.
+Linear Regression outperforming XGBoost is unusual and worth explaining. The answer lies in how the data was prepared:
 
-This is why a heavily preprocessed dataset favored a linear model over more complex ensemble methods.
+* Skewness was reduced across numerical features
+* SalePrice was log-transformed, converting exponential relationships to linear ones
+* Multicollinearity was removed, stabilizing coefficients
+* StandardScaler was applied, making feature weights directly comparable
+
+These steps satisfied every assumption of Linear Regression — linearity, normality of residuals, homoscedasticity, no multicollinearity. The data was engineered toward linearity, so naturally a linear model thrived.
+
+XGBoost is scale invariant — standardization that significantly helped Linear Regression had zero effect on it. On a small, clean, well-prepared dataset of 1460 houses, the additional complexity of XGBoost found no advantage to exploit.
 
 ### Decision Tree
 
-Overfitted heavily on training data and generalized poorly to unseen houses.
+Overfitted heavily on training data and generalized poorly to unseen houses. Memorized training patterns instead of learning generalizable rules.
 
 ### Random Forest
 
-Reduced overfitting compared to a single decision tree but could not outperform the fully optimized Linear Regression pipeline.
+Reduced overfitting compared to a single decision tree by averaging multiple trees. Still could not outperform the fully optimized Linear Regression pipeline on this dataset.
 
 ### XGBoost
 
-Captured additional nonlinear relationships and improved upon Random Forest, but could not overcome the advantage Linear Regression gained from data that was engineered toward linearity.
+Captured additional nonlinear relationships and improved upon Random Forest, but could not overcome the advantage Linear Regression gained from data engineered toward linearity.
 
 ---
 
 ## Final Result
 
-### Linear Regression (trained on full price range including outliers)
+### Linear Regression — trained on full price range including outliers
 
-* RMSE: **27,192**
-* MAE: **16,616**
-* MAPE: **9.59%**
-* R²: **0.894**
+* RMSE: **27,040**
+* MAE: **16,626**
+* MAPE: **9.56%**
+* R²: **0.896**
 
 On average, predictions are within approximately **9.6%** of the actual house price — across the full price spectrum including luxury properties.
+
+R² of 0.896 means the model explains 89.6% of why house prices differ from each other. The remaining 10.4% is noise the model could not capture.
 
 ---
 
 ## Performance Progression
 
-| Stage                                  | RMSE       | R²        |
-| -------------------------------------- | ---------- | --------- |
-| Initial Baseline                       | 31,237     | 0.86      |
-| After Cleaning & Feature Engineering   | ~20,500    | ~0.87     |
-| After Skewness Reduction & Log(Target) | **27,192** | **0.894** |
+| Stage | RMSE | R² |
+| --- | --- | --- |
+| Initial Baseline | 31,237 | 0.860 |
+| After Cleaning & Feature Engineering | ~20,500 | ~0.870 |
+| After Skewness Reduction & Log(Target) | 27,192 | 0.894 |
+| After Multicollinearity Removal | **27,040** | **0.896** |
 
 ---
 
 ## Key Learnings
 
-The biggest improvement came from understanding and preparing the data rather than simply switching to more complex models.
+**1. Data preparation matters more than model complexity**
+The biggest performance jump came from log transforming SalePrice and reducing skewness — not from switching to XGBoost or Random Forest. A well-prepared dataset in a simple model outperformed a complex model on raw data.
 
-A critical production insight emerged during this project: **optimizing for metrics is not the same as optimizing for real-world reliability.**
+**2. Optimizing for metrics is not the same as optimizing for real-world reliability**
+Removing outliers reduced RMSE from ~27k to ~17k — impressive on paper. But it created a model that would fail silently on luxury properties in production. Keeping the full training distribution and relying on log transformation is the correct production-grade decision, even at the cost of slightly worse benchmark numbers.
 
-Removing outliers reduced RMSE from ~27k to ~17k — but created a model that would fail silently on luxury properties in production. Keeping the full training distribution and relying on log transformation instead is the correct production-grade decision, even at the cost of slightly worse benchmark numbers.
+**3. Multicollinearity is a coefficient problem, not just a metric problem**
+Dropping GarageArea and TotRmsAbvGrd barely changed R² but made coefficients significantly more stable and trustworthy. Metrics measure accuracy. Coefficient stability determines whether you can trust and interpret the model.
 
-This project reinforced two important machine learning lessons:
-
-> Better data preparation often contributes more to model performance than choosing a more complex algorithm.
-
-> A model that generalizes correctly to the real world is more valuable than one that scores well on a filtered dataset.
+**4. Understand why, not just what**
+Log transformation did not just reduce outlier influence — it converted exponential house price relationships into linear ones that Linear Regression could actually learn. Standardization did not just normalize scale — it made coefficients directly comparable so the model could correctly weight feature importance.
 
 ---
 
 ## Future Improvements
 
-* Build an end-to-end Sklearn Pipeline to chain preprocessing and prediction into a single deployable object
-* Add input validation layer — check for missing fields, unseen categories, and out-of-range values before prediction reaches the model
+* Build an end-to-end Sklearn Pipeline to chain preprocessing and prediction into a single deployable object — saving scaler, encoder, and imputation values together
+* Add input validation layer — check for missing fields, unseen categories, and out-of-range values before prediction reaches the model, preventing silent failure
 * Deploy as a FastAPI endpoint so frontend applications can submit house features and receive price estimates
-* Implement cross-validation for more robust evaluation across data splits
-* Monitor for data drift over time and schedule periodic retraining
-* Analyze residuals to identify remaining systematic prediction errors
+* Implement cross-validation for more robust evaluation across data splits instead of single train-test split
+* Monitor for data drift over time and schedule periodic retraining as housing market conditions change
+* Analyze residuals systematically to identify remaining patterns in prediction errors
+* Run VIF analysis to formally confirm multicollinearity removal beyond correlation checks
 * Experiment with advanced feature interactions and hyperparameter tuning for XGBoost and Random Forest
